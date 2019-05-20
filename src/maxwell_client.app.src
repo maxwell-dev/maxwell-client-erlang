@@ -1,0 +1,12 @@
+{application, maxwell_client,
+  [{description, "Maxwell client implementation for erlang."},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {mod, {maxwell_client_app, []}},
+    {applications, [kernel, stdlib, lager, gun, basin, maxwell_protocol]},
+    {env, []},
+    {modules, []},
+    {maintainers, []},
+    {licenses, ["Apache 2.0"]},
+    {links, []}
+  ]}.
