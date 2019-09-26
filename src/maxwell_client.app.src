@@ -3,7 +3,7 @@
     {vsn, "0.1.0"},
     {registered, []},
     {mod, {maxwell_client_app, []}},
-    {applications, [kernel, stdlib, lager, gun, basin, maxwell_protocol]},
+    {applications, [kernel, stdlib, lager, gun, maxwell_protocol]},
     {env, []},
     {modules, []},
     {maintainers, []},

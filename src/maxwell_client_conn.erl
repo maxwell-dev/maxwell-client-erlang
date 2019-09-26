@@ -10,6 +10,7 @@
 -behaviour(gen_server).
 
 -include_lib("maxwell_protocol/include/maxwell_protocol_pb.hrl").
+-include("maxwell_client.hrl").
 
 %% API
 -export([
@@ -31,8 +32,7 @@
 
 -define(SERVER, ?MODULE).
 -define(ON_ROUND_TIMEOUT_CMD(Ref), {'$on_round_timeout', Ref}).
--define(ON_CONNECTED_CMD(Ref, Pid), {'$on_connected', Ref, Pid}).
--define(ON_DISCONNECTED_CMD(Ref, Pid), {'$on_disconnected', Ref, Pid}).
+
 -define(PING_CMD, '$ping').
 -define(MAX_ROUND_REF, 600000).
 
