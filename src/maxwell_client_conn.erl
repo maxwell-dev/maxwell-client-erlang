@@ -17,7 +17,8 @@
   start_link/1,
   add_listener/2,
   delete_listener/2,
-  send/3
+  send/3,
+  stop/1
 ]).
 
 %% gen_server callbacks
@@ -54,6 +55,9 @@
 
 start_link(Endpoint) ->
   gen_server:start_link(?MODULE, [Endpoint], []).
+
+stop(ServerRef) ->
+  gen_server:stop(ServerRef).
 
 add_listener(ServerRef, ListenerPid) ->
   gen_server:call(ServerRef, {add_listener, ListenerPid}).
