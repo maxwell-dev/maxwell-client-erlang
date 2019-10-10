@@ -10,7 +10,7 @@
 -ifndef(maxwell_client).
 -define(maxwell_client, true).
 
--define(ON_CONNECTED_CMD(Ref, Pid), {'$on_connected', Ref, Pid}).
--define(ON_DISCONNECTED_CMD(Ref, Pid), {'$on_disconnected', Ref, Pid}).
+-define(ON_CONNECTED_CMD(Pid), {'$on_connected', Pid}).
+-define(ON_DISCONNECTED_CMD(Pid), {'$on_disconnected', Pid}).
 
 -endif.

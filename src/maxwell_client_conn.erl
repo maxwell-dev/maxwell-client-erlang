@@ -118,10 +118,7 @@ handle_info(
     "Gun conn upgraded: endpoint: ~p, headers: ~p",
     [State#state.endpoint, Headers]
   ),
-  State2 = notify_and_clear(
-    ?ON_CONNECTED_CMD(State#state.gun_conn_ref, State#state.gun_conn_pid),
-    State
-  ),
+  State2 = notify_and_clear(?ON_CONNECTED_CMD(self()), State),
   {noreply, State2#state{is_ready = true}};
 handle_info(
     {gun_response, _GunConnPid, _StreamRef, _IsFin, Status, Headers}, State
@@ -144,19 +141,13 @@ handle_info({gun_error, _GunConnPid, Reason}, State) ->
   {stop, {error, Reason}, State};
 handle_info({gun_ws, _GunConnPid, _StreamRef, close}, State) ->
   lager:info("Gun conn closed: endpoint: ~p", [State#state.endpoint]),
-  State2 = notify_and_clear(
-    ?ON_DISCONNECTED_CMD(State#state.gun_conn_ref, State#state.gun_conn_pid),
-    State
-  ),
+  State2 = notify_and_clear(?ON_DISCONNECTED_CMD(self()), State),
   {noreply, open_gun_conn(close_gun_conn(State2#state{is_ready = false}))};
 handle_info({gun_ws, _GunConnPid, _StreamRef, {close, Code, <<>>}}, State) ->
   lager:info(
     "Gun conn closed: endpoint: ~p, code: ~p", [State#state.endpoint, Code]
   ),
-  State2 = notify_and_clear(
-    ?ON_DISCONNECTED_CMD(State#state.gun_conn_ref, State#state.gun_conn_pid),
-    State
-  ),
+  State2 = notify_and_clear(?ON_DISCONNECTED_CMD(self()), State),
   {noreply, open_gun_conn(close_gun_conn(State2#state{is_ready = false}))};
 handle_info({gun_ws, _GunConnPid, _StreamRef, Frame}, State) ->
   {noreply, recv0(Frame, State)};
@@ -166,20 +157,14 @@ handle_info({gun_down, _GunConnPid, Protocol, Reason,
     "Gun conn down: endpoint: ~p, protocol: ~p, reason: ~p",
     [State#state.endpoint, Protocol, Reason]
   ),
-  State2 = notify_and_clear(
-    ?ON_DISCONNECTED_CMD(State#state.gun_conn_ref, State#state.gun_conn_pid),
-    State
-  ),
+  State2 = notify_and_clear(?ON_DISCONNECTED_CMD(self()), State),
   {noreply, open_gun_conn(close_gun_conn(State2#state{is_ready = false}))};
 handle_info({'DOWN', _Ref, process, _GunConnPid, Reason}, State) ->
   lager:info(
     "Gun conn down(2): endpoint: ~p, reason: ~p",
     [State#state.endpoint, Reason]
   ),
-  State2 = notify_and_clear(
-    ?ON_DISCONNECTED_CMD(State#state.gun_conn_ref, State#state.gun_conn_pid),
-    State
-  ),
+  State2 = notify_and_clear(?ON_DISCONNECTED_CMD(self()), State),
   {noreply, open_gun_conn(close_gun_conn(State2#state{is_ready = false}))};
 handle_info(Info, State) ->
   lager:error("Recevied unknown info: ~p", [Info]),
