@@ -15,10 +15,11 @@
 %% API
 -export([
   start_link/1,
+  stop/1,
   add_listener/2,
   delete_listener/2,
   send/3,
-  stop/1
+  get_status/1
 ]).
 
 %% gen_server callbacks
@@ -67,6 +68,9 @@ delete_listener(ServerRef, ListenerPid) ->
 send(ServerRef, Msg, Timeout) ->
   gen_server:call(ServerRef, {send, Msg, Timeout}, infinity).
 
+get_status(ServerRef) ->
+  gen_server:call(ServerRef, get_status).
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -91,6 +95,8 @@ handle_call({delete_listener, ListenerPid}, _From, State) ->
   {reply, ok, delete_listener0(ListenerPid, State)};
 handle_call({send, Msg, Timeout}, From, State) ->
   {noreply, send0(Msg, Timeout, From, State)};
+handle_call(get_status, _From, State) ->
+  {reply, State#state.status, State};
 handle_call(Request, _From, State) ->
   lager:error("Recevied unknown call: ~p", [Request]),
   {reply, ok, State}.
