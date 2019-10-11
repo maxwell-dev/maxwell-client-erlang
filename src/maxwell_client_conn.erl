@@ -15,7 +15,6 @@
 %% API
 -export([
   start_link/1,
-  start_link/2,
   add_listener/2,
   delete_listener/2,
   send/3,
@@ -47,18 +46,14 @@
   listeners,
   last_ref,
   sending_time,
-  is_ready
+  status
 }).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
-
 start_link(Endpoint) ->
-  start_link(Endpoint, []).
-
-start_link(Endpoint, Listeners) ->
-  gen_server:start_link(?MODULE, [Endpoint, Listeners], []).
+  gen_server:start_link(?MODULE, [Endpoint], []).
 
 stop(ServerRef) ->
   gen_server:stop(ServerRef).
@@ -76,17 +71,17 @@ send(ServerRef, Msg, Timeout) ->
 %%% gen_server callbacks
 %%%===================================================================
 
-init([Endpoint, Listeners]) ->
+init([Endpoint]) ->
   State = #state{
     endpoint = Endpoint,
     gun_conn_ref = undefined,
     gun_conn_pid = undefined,
     timers = dict:new(),
     froms = dict:new(),
-    listeners = Listeners,
+    listeners = [],
     last_ref = 0,
     sending_time = 0,
-    is_ready = false
+    status = undefined
   },
   {ok, repeat_ping(open_gun_conn(State))}.
 
@@ -122,14 +117,13 @@ handle_info(
     "Gun conn upgraded: endpoint: ~p, headers: ~p",
     [State#state.endpoint, Headers]
   ),
-  State2 = notify_and_clear(?ON_CONNECTED_CMD(self()), State),
-  {noreply, State2#state{is_ready = true}};
+  {noreply, on_gun_conn_connected(State)};
 handle_info(
-    {gun_response, _GunConnPid, _StreamRef, _IsFin, Status, Headers}, State
+    {gun_response, _GunConnPid, _StreamRef, _IsFin, _Status, Headers}, State
 ) ->
   lager:info(
-    "Failed to upgrade: endpoint: ~p, status: ~p, headers: ~p",
-    [State#state.endpoint, Status, Headers]
+    "Failed to upgrade: endpoint: ~p, headers: ~p",
+    [State#state.endpoint, Headers]
   ),
   {stop, {error, ws_upgrade_failed}, State};
 handle_info({gun_error, _GunConnPid, _StreamRef, Reason}, State) ->
@@ -145,14 +139,12 @@ handle_info({gun_error, _GunConnPid, Reason}, State) ->
   {stop, {error, Reason}, State};
 handle_info({gun_ws, _GunConnPid, _StreamRef, close}, State) ->
   lager:info("Gun conn closed: endpoint: ~p", [State#state.endpoint]),
-  State2 = notify_and_clear(?ON_DISCONNECTED_CMD(self()), State),
-  {noreply, open_gun_conn(close_gun_conn(State2#state{is_ready = false}))};
+  {noreply, on_gun_conn_disconnected(State)};
 handle_info({gun_ws, _GunConnPid, _StreamRef, {close, Code, <<>>}}, State) ->
   lager:info(
     "Gun conn closed: endpoint: ~p, code: ~p", [State#state.endpoint, Code]
   ),
-  State2 = notify_and_clear(?ON_DISCONNECTED_CMD(self()), State),
-  {noreply, open_gun_conn(close_gun_conn(State2#state{is_ready = false}))};
+  {noreply, on_gun_conn_disconnected(State)};
 handle_info({gun_ws, _GunConnPid, _StreamRef, Frame}, State) ->
   {noreply, recv0(Frame, State)};
 handle_info({gun_down, _GunConnPid, Protocol, Reason,
@@ -161,15 +153,13 @@ handle_info({gun_down, _GunConnPid, Protocol, Reason,
     "Gun conn down: endpoint: ~p, protocol: ~p, reason: ~p",
     [State#state.endpoint, Protocol, Reason]
   ),
-  State2 = notify_and_clear(?ON_DISCONNECTED_CMD(self()), State),
-  {noreply, open_gun_conn(close_gun_conn(State2#state{is_ready = false}))};
+  {noreply, on_gun_conn_disconnected(State)};
 handle_info({'DOWN', _Ref, process, _GunConnPid, Reason}, State) ->
   lager:info(
     "Gun conn down(2): endpoint: ~p, reason: ~p",
     [State#state.endpoint, Reason]
   ),
-  State2 = notify_and_clear(?ON_DISCONNECTED_CMD(self()), State),
-  {noreply, open_gun_conn(close_gun_conn(State2#state{is_ready = false}))};
+  {noreply, on_gun_conn_disconnected(State)};
 handle_info(Info, State) ->
   lager:error("Recevied unknown info: ~p", [Info]),
   {noreply, State}.
@@ -187,7 +177,11 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 open_gun_conn(State) ->
   {GunConnRef, GunConnPid} = open_gun_conn0(State#state.endpoint),
-  State#state{gun_conn_ref = GunConnRef, gun_conn_pid = GunConnPid}.
+  State#state{
+    gun_conn_ref = GunConnRef, 
+    gun_conn_pid = GunConnPid,
+    status = initial
+  }.
 
 open_gun_conn0(Endpoint) ->
   [HostBin, PortBin] = binary:split(Endpoint, <<":">>),
@@ -208,13 +202,33 @@ close_gun_conn(State) ->
   end,
   State#state{
     gun_conn_ref = undefined,
-    gun_conn_pid = undefined
+    gun_conn_pid = undefined,
+    status = closed
   }.
+
+on_gun_conn_connected(State) ->
+  notify_and_clear(
+    ?ON_CONNECTED_CMD(self()), State#state{status = connected}
+  ).
+
+on_gun_conn_disconnected(State) ->
+  open_gun_conn(
+    close_gun_conn(
+      notify_and_clear(
+        ?ON_DISCONNECTED_CMD(self()), State#state{status = disconnected}
+      )
+    )
+  ).
 
 add_listener0(ListenerPid, State) ->
   case lists:member(ListenerPid, State#state.listeners) of
     true -> State;
     false ->
+      case State#state.status of
+        connected -> ListenerPid ! ?ON_CONNECTED_CMD(self());
+        disconnected -> ListenerPid ! ?ON_DISCONNECTED_CMD(self());
+        _ -> ignore
+      end,
       State#state{
         listeners = lists:append(State#state.listeners, [ListenerPid])
       }
@@ -282,13 +296,13 @@ on_round_timeout(Ref, State) ->
   delete_from(Ref, delete_timer(Ref, State)).
 
 repeat_ping(State) ->
-  case State#state.is_ready of
-    true ->
+  case State#state.status of
+    connected ->
       case should_ping(State#state.sending_time) of
         true -> send2(#ping_req_t{}, State);
         false -> ignore
       end;
-    false -> ignore
+    _ -> ignore
   end,
   send_cmd(?PING_CMD, 5000),
   State.

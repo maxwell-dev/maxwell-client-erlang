@@ -13,8 +13,7 @@
 -export([
   start_link/0,
   start_link/1,
-  start_child/1,
-  start_child/2
+  start_child/1
 ]).
 
 %% Supervisor callbacks
@@ -42,9 +41,6 @@ start_link(Config) ->
 
 start_child(Endpoint) ->
   supervisor:start_child(?SUP_NAME, [Endpoint]).
-
-start_child(Endpoint, Listeners) ->
-  supervisor:start_child(?SUP_NAME, [Endpoint, Listeners]).
 
 %%%===================================================================
 %%% Supervisor callbacks
