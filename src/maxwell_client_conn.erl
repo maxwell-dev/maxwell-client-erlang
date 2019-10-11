@@ -15,6 +15,7 @@
 %% API
 -export([
   start_link/1,
+  start_link/2,
   add_listener/2,
   delete_listener/2,
   send/3,
@@ -54,7 +55,10 @@
 %%%===================================================================
 
 start_link(Endpoint) ->
-  gen_server:start_link(?MODULE, [Endpoint], []).
+  start_link(Endpoint, []).
+
+start_link(Endpoint, Listeners) ->
+  gen_server:start_link(?MODULE, [Endpoint, Listeners], []).
 
 stop(ServerRef) ->
   gen_server:stop(ServerRef).
@@ -72,14 +76,14 @@ send(ServerRef, Msg, Timeout) ->
 %%% gen_server callbacks
 %%%===================================================================
 
-init([Endpoint]) ->
+init([Endpoint, Listeners]) ->
   State = #state{
     endpoint = Endpoint,
     gun_conn_ref = undefined,
     gun_conn_pid = undefined,
     timers = dict:new(),
     froms = dict:new(),
-    listeners = [],
+    listeners = Listeners,
     last_ref = 0,
     sending_time = 0,
     is_ready = false
