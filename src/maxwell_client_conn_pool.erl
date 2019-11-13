@@ -6,7 +6,7 @@
 %%% @end
 %%% Created : 08. Jun 2018 5:37 PM
 %%%-------------------------------------------------------------------
--module(maxwell_client_conn_mgr).
+-module(maxwell_client_conn_pool).
 -behaviour(gen_server).
 
 %% API
@@ -29,7 +29,7 @@
 -define(SERVER, ?MODULE).
 
 -record(state, {
-  parallels_size,
+  capacity,
   endpoint_conns_dict,
   endpoint_index_dict,
   ref_endpoint_dict
@@ -52,11 +52,14 @@ fetch(Endpoint) ->
 %%%===================================================================
 init([Config]) ->
   State = init_state(Config),
-  lager:info("Initializing ~p: pid: ~p", [?MODULE, self()]),
+  lager:info(
+    "Initializing ~p: capacity: ~p, pid: ~p", 
+    [?MODULE, State#state.capacity, self()]
+  ),
   {ok, State}.
 
 handle_call({fetch, Endpoint}, _From, State) ->
-  reply(fetch0(Endpoint, State));
+  reply(fetch2(Endpoint, State));
 handle_call(Request, _From, State) ->
   lager:info("Received unknown call: ~p", [Request]),
   reply({ok, State}).
@@ -88,104 +91,82 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
 init_state(Config) ->
-  Term = lists:keyfind(parallels_size, 1, Config),
+  Term = lists:keyfind(capacity, 1, Config),
   #state{
-    parallels_size
-    = case Term of
-        {parallels_size, Size} -> Size;
-        false -> 3
-      end,
+    capacity = case Term of
+      {capacity, Size} -> Size;
+      false -> 100
+    end,
     endpoint_conns_dict = dict:new(),
     endpoint_index_dict = dict:new(),
     ref_endpoint_dict = dict:new()
   }.
 
-fetch0(Endpoint, State) ->
-  NewState = ensure_paralles_satisfied(Endpoint, State),
-  {{Ref, Pid}, NewState1} = next_conn(Endpoint, NewState),
-  NewState2 = ensure_conn_monitored(Endpoint, Ref, NewState1),
-  {{ok, Pid}, NewState2}.
-
-ensure_paralles_satisfied(Endpoint, State) ->
-  NewConns = ensure_paralles_satisfied0(Endpoint, State),
-  State#state{endpoint_conns_dict = dict:store(
-    Endpoint, NewConns, State#state.endpoint_conns_dict
-  )}.
-
-ensure_paralles_satisfied0(Endpoint, State) ->
-  case dict:find(Endpoint, State#state.endpoint_conns_dict) of
-    {ok, Conns} ->
-      ensure_paralles_satisfied1(
-        Endpoint, Conns, State#state.parallels_size);
-    error ->
-      ensure_paralles_satisfied1(
-        Endpoint, [], State#state.parallels_size)
+fetch2(Endpoint, State) ->
+  Conn2 = case dict:find(Endpoint, State#state.endpoint_conns_dict) of
+    {ok, Conns} -> Conns;
+    error -> []
+  end,
+  case erlang:length(Conn2) < State#state.capacity of
+    true -> open_conn(Endpoint, State);
+    false -> next_conn(Endpoint, State)
   end.
 
-ensure_paralles_satisfied1(_Endpoint, Conns, ParallelsSize)
-  when erlang:length(Conns) == ParallelsSize ->
-  Conns;
-ensure_paralles_satisfied1(Endpoint, Conns, ParallelsSize)
-  when erlang:length(Conns) < ParallelsSize ->
-  {ok, Conn} = open(Endpoint),
-  ensure_paralles_satisfied1(Endpoint, [Conn | Conns], ParallelsSize);
-ensure_paralles_satisfied1(Endpoint, Conns, ParallelsSize)
-  when erlang:length(Conns) > ParallelsSize ->
-  [{_, Pid} | RestConns] = Conns,
-  exit(Pid, close_redundant_conn),
-  ensure_paralles_satisfied1(Endpoint, RestConns, ParallelsSize).
+open_conn(Endpoint, State) ->
+  {ok, Pid} = maxwell_client_conn_sup:start_child(Endpoint),
+  Ref = erlang:monitor(process, Pid),
+
+  State2 = State#state{
+    endpoint_conns_dict = dict:update(
+      Endpoint, 
+      fun(Conns)-> [{Ref, Pid} | Conns] end, 
+      [{Ref, Pid}], 
+      State#state.endpoint_conns_dict
+    ),
+    endpoint_index_dict = dict:store(
+      Endpoint, 0, State#state.endpoint_index_dict
+    ), 
+    ref_endpoint_dict = dict:store(
+      Ref, Endpoint, State#state.ref_endpoint_dict
+    )
+  },
+
+  {{ok, Pid}, State2}.
 
 next_conn(Endpoint, State) ->
   {ok, Conns} = dict:find(Endpoint, State#state.endpoint_conns_dict),
-  CurrIndex1 =
-    case dict:find(Endpoint, State#state.endpoint_index_dict) of
-      {ok, CurrIndex} -> CurrIndex;
-      error -> 0
-    end,
-  NextIndex = CurrIndex1 + 1,
-  NextIndex1
-    = case NextIndex =< erlang:length(Conns) of
-        true -> NextIndex;
-        false -> 1
-      end,
+  CurrIndex2 = case dict:find(Endpoint, State#state.endpoint_index_dict) of
+    {ok, CurrIndex} -> CurrIndex;
+    error -> 0
+  end,
+  NextIndex = CurrIndex2 + 1,
+  NextIndex2 = case NextIndex =< erlang:length(Conns) of
+    true -> NextIndex;
+    false -> 1
+  end,
+  {_, Pid} = lists:nth(NextIndex2, Conns),
   {
-    lists:nth(NextIndex1, Conns),
+    {ok, Pid},
     State#state{endpoint_index_dict = dict:store(
-      Endpoint, NextIndex1, State#state.endpoint_index_dict
+      Endpoint, NextIndex2, State#state.endpoint_index_dict
     )}
   }.
 
-ensure_conn_monitored(Endpoint, Ref, State) ->
-  case dict:is_key(Ref, State#state.ref_endpoint_dict) of
-    true -> State;
-    false ->
-      State#state{
-        ref_endpoint_dict =
-        dict:store(Ref, Endpoint, State#state.ref_endpoint_dict)
-      }
-  end.
-
-open(Endpoint) ->
-  {ok, Pid} = maxwell_client_conn_sup:start_child(Endpoint),
-  Ref = erlang:monitor(process, Pid),
-  {ok, {Ref, Pid}}.
-
 on_conn_closed({Ref, _} = Conn, State) ->
   case dict:find(Ref, State#state.ref_endpoint_dict) of
-    {ok, Endpoint} ->
-      erase_conn(Endpoint, Conn, State);
-    error ->
-      State
+    {ok, Endpoint} -> erase_conn(Endpoint, Conn, State);
+    error -> State
   end.
 
 erase_conn(Endpoint, {Ref, _} = Conn, State) ->
   State#state{
-    endpoint_conns_dict =
-    case dict:find(Endpoint, State#state.endpoint_conns_dict) of
+    endpoint_conns_dict = 
+        case dict:find(Endpoint, State#state.endpoint_conns_dict) of
       {ok, Conns} ->
-        NewConns = lists:dropwhile(fun(Conn0) -> Conn0 == Conn end, Conns),
-        dict:store(Endpoint, NewConns, State#state.endpoint_conns_dict);
+        Conn2 = lists:dropwhile(fun(Conn2) -> Conn2 == Conn end, Conns),
+        dict:store(Endpoint, Conn2, State#state.endpoint_conns_dict);
       error ->
         State#state.endpoint_conns_dict
     end,

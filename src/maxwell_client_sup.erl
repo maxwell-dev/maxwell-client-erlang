@@ -47,7 +47,7 @@ init([]) ->
   ChildSpecs = [
     ?SPEC1(maxwell_client_registry, worker),
     ?SPEC1(maxwell_client_conn_sup, supervisor),
-    ?SPEC1(maxwell_client_conn_mgr, worker)
+    ?SPEC1(maxwell_client_conn_pool, worker)
   ],
   {ok, {SupFlags, ChildSpecs}}.
 
