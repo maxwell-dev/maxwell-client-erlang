@@ -1,18 +1,18 @@
 {"1.1.0",
 [{<<"cowlib">>,{pkg,<<"cowlib">>,<<"2.6.0">>},1},
  {<<"goldrush">>,{pkg,<<"goldrush">>,<<"0.1.9">>},1},
- {<<"gpb">>,{pkg,<<"gpb">>,<<"4.10.4">>},1},
+ {<<"gpb">>,{pkg,<<"gpb">>,<<"4.10.6">>},1},
  {<<"gun">>,{pkg,<<"gun">>,<<"1.3.1">>},0},
  {<<"lager">>,{pkg,<<"lager">>,<<"3.8.0">>},0},
  {<<"maxwell_protocol">>,
   {git,"https://github.com/maxwell-dev/maxwell-protocol-erlang.git",
-       {ref,"cbf749415590eac2785cbba195c503265ec0d6cc"}},
+       {ref,"3c4847edce3a2796007640c24c0151e5d7b1870b"}},
   0}]}.
 [
 {pkg_hash,[
  {<<"cowlib">>, <<"8AA629F81A0FC189F261DC98A42243FA842625FEEA3C7EC56C48F4CCDB55490F">>},
  {<<"goldrush">>, <<"F06E5D5F1277DA5C413E84D5A2924174182FB108DABB39D5EC548B27424CD106">>},
- {<<"gpb">>, <<"A83BEC05F331E2413E883930A104B1E167B1C1BE6A74244F68DC00911563CF1C">>},
+ {<<"gpb">>, <<"B3A63111C914DDBF74B9C7CF813F7BA4CC26F8A8A630B6A418202119ADD146B4">>},
  {<<"gun">>, <<"1489FD96018431B89F401041A9CE0B02B45265247F0FDCF71273BF087C64EA4F">>},
  {<<"lager">>, <<"3402B9A7E473680CA179FC2F1D827CAB88DD37DD1E6113090C6F45EF05228A1C">>}]}
 ].
