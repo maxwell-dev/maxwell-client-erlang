@@ -35,7 +35,6 @@
 -define(SERVER, ?MODULE).
 -define(ON_ROUND_TIMEOUT_CMD(Ref), {'$on_round_timeout', Ref}).
 
--define(PING_CMD, '$ping').
 -define(MAX_ROUND_REF, 600000).
 -define(DELAY_QUEUE_CAPACITY, 128).
 
@@ -48,7 +47,6 @@
   delay_queue,
   listeners,
   last_ref,
-  sending_time,
   status
 }).
 
@@ -87,10 +85,9 @@ init([Endpoint]) ->
     delay_queue = orddict:new(),
     listeners = [],
     last_ref = 0,
-    sending_time = 0,
     status = undefined
   },
-  {ok, repeat_ping(open_gun_conn(State))}.
+  {ok, open_gun_conn(State)}.
 
 handle_call({add_listener, ListenerPid}, _From, State) ->
   {reply, ok, add_listener0(ListenerPid, State)};
@@ -110,8 +107,6 @@ handle_cast(Request, State) ->
 
 handle_info(?ON_ROUND_TIMEOUT_CMD(Ref), State) ->
   {noreply, on_round_timeout(Ref, State)};
-handle_info(?PING_CMD, State) ->
-  {noreply, repeat_ping(State)};
 handle_info({gun_up, GunConnPid, Protocol}, State) ->
   lager:info(
     "Gun conn opened: endpoint: ~p, protocol: ~p",
@@ -295,7 +290,7 @@ send3(Msg, State) ->
   gun:ws_send(
     State#state.gun_conn_pid, {binary, maxwell_protocol:encode_msg(Msg)}
   ),
-  State#state{sending_time = get_current_timestamp()}.
+  State.
 
 recv0(EncodedMsg, State) ->
   {binary, EncodedMsg2} = EncodedMsg,
@@ -317,21 +312,6 @@ recv2(Msg, State) ->
 on_round_timeout(Ref, State) ->
   reply(Ref, {error, {100, timeout}}, State),
   delete_delay_msg(Ref, delete_from(Ref, delete_timer(Ref, State))).
-
-repeat_ping(State) ->
-  case State#state.status of
-    connected ->
-      case should_ping(State#state.sending_time) of
-        true -> send2(#ping_req_t{}, State);
-        false -> ignore
-      end;
-    _ -> ignore
-  end,
-  send_cmd(?PING_CMD, 5000),
-  State.
-
-should_ping(SendingTime) ->
-  get_current_timestamp() - SendingTime >= 5000.
 
 next_ref(State) ->
   NewRef = State#state.last_ref + 1,
@@ -374,24 +354,15 @@ delete_delay_msg(Ref, State) ->
   State#state{delay_queue = orddict:erase(Ref, State#state.delay_queue)}.
 
 send_delay_msgs(State) -> 
-  orddict:fold(
-    fun(Ref, Msg, State2) -> 
-      State3 = send3(Msg, State2),
-      State3#state{delay_queue = orddict:erase(Ref, State3#state.delay_queue)}
+  State3 = orddict:fold(fun(_, Msg, State2) -> 
+      send3(Msg, State2)
     end, 
-    State,
-    State#state.delay_queue
-  ).
+    State, State#state.delay_queue
+  ),
+  State3#state{delay_queue = orddict:new()}.
 
 reply(Ref, Reply, State) ->
   case dict:find(Ref, State#state.froms) of
     {ok, From} -> gen_server:reply(From, Reply);
     error -> ignore
   end.
-
-send_cmd(Cmd, DelayMS) ->
-  erlang:send_after(DelayMS, self(), Cmd).
-
-get_current_timestamp() ->
-  {MegaSec, Sec, MicroSec} = os:timestamp(),
-  1000000000 * MegaSec + Sec * 1000 + erlang:trunc(MicroSec / 1000).
