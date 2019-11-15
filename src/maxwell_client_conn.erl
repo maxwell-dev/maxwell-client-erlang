@@ -37,6 +37,7 @@
 
 -define(PING_CMD, '$ping').
 -define(MAX_ROUND_REF, 600000).
+-define(DELAY_QUEUE_CAPACITY, 128).
 
 -record(state, {
   endpoint,
@@ -44,6 +45,7 @@
   gun_conn_pid,
   timers,
   froms,
+  delay_queue,
   listeners,
   last_ref,
   sending_time,
@@ -82,6 +84,7 @@ init([Endpoint]) ->
     gun_conn_pid = undefined,
     timers = dict:new(),
     froms = dict:new(),
+    delay_queue = orddict:new(),
     listeners = [],
     last_ref = 0,
     sending_time = 0,
@@ -213,8 +216,9 @@ close_gun_conn(State) ->
   }.
 
 on_gun_conn_connected(State) ->
+  State2 = send_delay_msgs(State),
   notify_and_clear(
-    ?ON_CONNECTED_CMD(self()), State#state{status = connected}
+    ?ON_CONNECTED_CMD(self()), State2#state{status = connected}
   ).
 
 on_gun_conn_disconnected(State) ->
@@ -262,17 +266,32 @@ send0(Msg, Timeout, From, State) ->
   end.
 
 send1(Msg, Timeout, From, State) ->
-  State2 = new_ref(State),
+  State2 = next_ref(State),
   Ref = State2#state.last_ref,
   State3 = add_from(Ref, From, State2),
   State4 = add_timer(Ref, Timeout, State3),
   Msg2 = set_ref_to_msg(Msg, Ref),
   send2(Msg2, State4).
 
-send2(Msg, State) ->
-  lager:debug(
-    "Sending msg: ~p, to: ~p", [Msg, State#state.endpoint]
-  ),
+send2(Msg, State) -> 
+  case State#state.status =:= connected of
+    true -> send3(Msg, State);
+    false ->
+      Size = orddict:size(State#state.delay_queue),
+      lager:debug("Adding delay msg: msg: ~p, queue_size: ~p", [Msg, Size]),
+      case Size < ?DELAY_QUEUE_CAPACITY of
+        true -> add_delay_msg(Msg, State);
+        false -> 
+          lager:warning("Delay queue is full: ~p", [Size]),
+          reply(
+            get_ref_from_msg(Msg), {error, {100, delay_queue_is_full}}, State
+          ),
+          State
+      end
+  end.
+
+send3(Msg, State) ->
+  lager:debug("Sending msg: ~p, to: ~p", [Msg, State#state.endpoint]),
   gun:ws_send(
     State#state.gun_conn_pid, {binary, maxwell_protocol:encode_msg(Msg)}
   ),
@@ -290,16 +309,14 @@ recv1(Msg, State) ->
   end.
 
 recv2(Msg, State) ->
-  lager:debug(
-    "Received msg: ~p: from: ~p, ", [Msg, State#state.endpoint]
-  ),
+  lager:debug("Received msg: ~p: from: ~p, ", [Msg, State#state.endpoint]),
   Ref = get_ref_from_msg(Msg),
   reply(Ref, Msg, State),
   delete_from(Ref, delete_timer(Ref, State)).
 
 on_round_timeout(Ref, State) ->
-  reply(Ref, {error, {100, timeout}}, State),
-  delete_from(Ref, delete_timer(Ref, State)).
+  reply(Ref, {error, {99, timeout}}, State),
+  delete_delay_msg(Ref, delete_from(Ref, delete_timer(Ref, State))).
 
 repeat_ping(State) ->
   case State#state.status of
@@ -316,7 +333,7 @@ repeat_ping(State) ->
 should_ping(SendingTime) ->
   get_current_timestamp() - SendingTime >= 5000.
 
-new_ref(State) ->
+next_ref(State) ->
   NewRef = State#state.last_ref + 1,
   case NewRef > ?MAX_ROUND_REF of
     true -> State#state{last_ref = 1};
@@ -347,6 +364,24 @@ delete_timer(Ref, State) ->
     error -> ignore
   end,
   State#state{timers = dict:erase(Ref, State#state.timers)}.
+
+add_delay_msg(Msg, State) -> 
+  State#state{delay_queue = 
+    orddict:store(get_ref_from_msg(Msg), Msg, State#state.delay_queue)
+  }.
+
+delete_delay_msg(Ref, State) -> 
+  State#state{delay_queue = orddict:erase(Ref, State#state.delay_queue)}.
+
+send_delay_msgs(State) -> 
+  orddict:fold(
+    fun(Ref, Msg, State2) -> 
+      State3 = send3(Msg, State2),
+      State3#state{delay_queue = orddict:erase(Ref, State3#state.delay_queue)}
+    end, 
+    State,
+    State#state.delay_queue
+  ).
 
 reply(Ref, Reply, State) ->
   case dict:find(Ref, State#state.froms) of
