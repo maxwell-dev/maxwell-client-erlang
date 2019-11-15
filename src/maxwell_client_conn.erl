@@ -284,7 +284,7 @@ send2(Msg, State) ->
         false -> 
           lager:warning("Delay queue is full: ~p", [Size]),
           reply(
-            get_ref_from_msg(Msg), {error, {100, delay_queue_is_full}}, State
+            get_ref_from_msg(Msg), {error, {10, delay_queue_is_full}}, State
           ),
           State
       end
@@ -315,7 +315,7 @@ recv2(Msg, State) ->
   delete_from(Ref, delete_timer(Ref, State)).
 
 on_round_timeout(Ref, State) ->
-  reply(Ref, {error, {99, timeout}}, State),
+  reply(Ref, {error, {100, timeout}}, State),
   delete_delay_msg(Ref, delete_from(Ref, delete_timer(Ref, State))).
 
 repeat_ping(State) ->
