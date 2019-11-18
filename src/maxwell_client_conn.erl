@@ -19,6 +19,7 @@
   add_listener/2,
   delete_listener/2,
   send/3,
+  async_send/3,
   get_status/1
 ]).
 
@@ -68,6 +69,9 @@ delete_listener(ServerRef, ListenerPid) ->
 send(ServerRef, Msg, Timeout) ->
   gen_server:call(ServerRef, {send, Msg, Timeout}, infinity).
 
+async_send(ServerRef, Msg, Timeout) ->
+  gen_server:call(ServerRef, {async_send, Msg, Timeout}, infinity).
+
 get_status(ServerRef) ->
   gen_server:call(ServerRef, get_status).
 
@@ -94,7 +98,9 @@ handle_call({add_listener, ListenerPid}, _From, State) ->
 handle_call({delete_listener, ListenerPid}, _From, State) ->
   {reply, ok, delete_listener0(ListenerPid, State)};
 handle_call({send, Msg, Timeout}, From, State) ->
-  {noreply, send0(Msg, Timeout, From, State)};
+  {noreply, send0(Msg, Timeout, {From, sync}, State)};
+handle_call({async_send, Msg, Timeout}, From, State) ->
+  {reply, ok, send0(Msg, Timeout, {From, async}, State)};
 handle_call(get_status, _From, State) ->
   {reply, State#state.status, State};
 handle_call(Request, _From, State) ->
@@ -363,6 +369,10 @@ send_delay_msgs(State) ->
 
 reply(Ref, Reply, State) ->
   case dict:find(Ref, State#state.froms) of
-    {ok, From} -> gen_server:reply(From, Reply);
+    {ok, {From, Mode}} -> 
+      case Mode of 
+        sync -> gen_server:reply(From, Reply);
+        async -> From ! Reply
+      end;
     error -> ignore
   end.
