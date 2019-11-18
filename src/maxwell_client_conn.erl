@@ -369,12 +369,10 @@ send_delay_msgs(State) ->
 
 reply(Ref, Reply, State) ->
   case dict:find(Ref, State#state.froms) of
-    {ok, {From, Mode}} -> 
+    {ok, {{Pid, _} = From, Mode}} -> 
       case Mode of 
         sync -> gen_server:reply(From, Reply);
-        async -> 
-          lager:info("#@#@#@#@#@ ~p, ~p", [From, Reply]),
-          From ! Reply
+        async -> Pid ! Reply
       end;
     error -> ignore
   end.
