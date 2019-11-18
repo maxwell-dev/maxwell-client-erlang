@@ -372,7 +372,9 @@ reply(Ref, Reply, State) ->
     {ok, {From, Mode}} -> 
       case Mode of 
         sync -> gen_server:reply(From, Reply);
-        async -> From ! Reply
+        async -> 
+          lager:info("#@#@#@#@#@ ~p, ~p", [From, Reply]),
+          From ! Reply
       end;
     error -> ignore
   end.
