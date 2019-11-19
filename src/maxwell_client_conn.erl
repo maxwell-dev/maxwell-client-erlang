@@ -72,13 +72,13 @@ send(ServerRef, Msg, Timeout) ->
   send(ServerRef, Msg, Timeout, undefined).
 
 send(ServerRef, Msg, Timeout, Callback) ->
-  gen_server:call(ServerRef, {send, Msg, Timeout, Callback}, infinity).
+  gen_server:call(ServerRef, {send, Msg, Timeout, Callback}, Timeout*2).
 
 async_send(ServerRef, Msg, Timeout) ->
   async_send(ServerRef, Msg, Timeout, undefined).
 
 async_send(ServerRef, Msg, Timeout, Callback) ->
-  gen_server:call(ServerRef, {async_send, Msg, Timeout, Callback}, infinity).
+  gen_server:call(ServerRef, {async_send, Msg, Timeout, Callback}, Timeout*2).
 
 get_status(ServerRef) ->
   gen_server:call(ServerRef, get_status).
