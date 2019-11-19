@@ -71,14 +71,14 @@ delete_listener(ServerRef, ListenerPid) ->
 send(ServerRef, Msg, Timeout) ->
   send(ServerRef, Msg, Timeout, undefined).
 
-send(ServerRef, Msg, Timeout, Attachment) ->
-  gen_server:call(ServerRef, {send, Msg, Timeout, Attachment}, infinity).
+send(ServerRef, Msg, Timeout, Callback) ->
+  gen_server:call(ServerRef, {send, Msg, Timeout, Callback}, infinity).
 
 async_send(ServerRef, Msg, Timeout) ->
   async_send(ServerRef, Msg, Timeout, undefined).
 
-async_send(ServerRef, Msg, Timeout, Attachment) ->
-  gen_server:call(ServerRef, {async_send, Msg, Timeout, Attachment}, infinity).
+async_send(ServerRef, Msg, Timeout, Callback) ->
+  gen_server:call(ServerRef, {async_send, Msg, Timeout, Callback}, infinity).
 
 get_status(ServerRef) ->
   gen_server:call(ServerRef, get_status).
@@ -105,10 +105,10 @@ handle_call({add_listener, ListenerPid}, _From, State) ->
   {reply, ok, add_listener0(ListenerPid, State)};
 handle_call({delete_listener, ListenerPid}, _From, State) ->
   {reply, ok, delete_listener0(ListenerPid, State)};
-handle_call({send, Msg, Timeout, Attachment}, From, State) ->
-  {noreply, send0(Msg, Timeout, {From, Attachment, sync}, State)};
-handle_call({async_send, Msg, Timeout, Attachment}, From, State) ->
-  {reply, ok, send0(Msg, Timeout, {From, Attachment, async}, State)};
+handle_call({send, Msg, Timeout, Callback}, From, State) ->
+  {noreply, send0(Msg, Timeout, {From, Callback, sync}, State)};
+handle_call({async_send, Msg, Timeout, Callback}, From, State) ->
+  {reply, ok, send0(Msg, Timeout, {From, Callback, async}, State)};
 handle_call(get_status, _From, State) ->
   {reply, State#state.status, State};
 handle_call(Request, _From, State) ->
@@ -375,17 +375,17 @@ send_delay_msgs(State) ->
 
 reply(Ref, Reply, State) ->
   case dict:find(Ref, State#state.sources) of
-    {ok, {{Pid, _} = From, Attachment, Mode}} -> 
+    {ok, {{Pid, _} = From, Callback, Mode}} -> 
       case Mode of 
         sync ->
-          case Attachment of
+          case Callback of
             undefined -> gen_server:reply(From, Reply);
-            _ -> gen_server:reply(From, {Reply, Attachment})
+            _ -> gen_server:reply(From, Callback(Reply))
           end;
         async ->
-          case Attachment of
+          case Callback of
             undefined -> Pid ! Reply;
-            _ -> Pid ! {Reply, Attachment}
+            _ -> Pid ! Callback(Reply)
           end
       end;
     error -> ignore
