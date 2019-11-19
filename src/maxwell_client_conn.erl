@@ -19,7 +19,9 @@
   add_listener/2,
   delete_listener/2,
   send/3,
+  send/4,
   async_send/3,
+  async_send/4,
   get_status/1
 ]).
 
@@ -44,7 +46,7 @@
   gun_conn_ref,
   gun_conn_pid,
   timers,
-  froms,
+  sources,
   delay_queue,
   listeners,
   last_ref,
@@ -67,10 +69,16 @@ delete_listener(ServerRef, ListenerPid) ->
   gen_server:call(ServerRef, {delete_listener, ListenerPid}).
 
 send(ServerRef, Msg, Timeout) ->
-  gen_server:call(ServerRef, {send, Msg, Timeout}, infinity).
+  send(ServerRef, Msg, Timeout, undefined).
+
+send(ServerRef, Msg, Timeout, Attachment) ->
+  gen_server:call(ServerRef, {send, Msg, Timeout, Attachment}, infinity).
 
 async_send(ServerRef, Msg, Timeout) ->
-  gen_server:call(ServerRef, {async_send, Msg, Timeout}, infinity).
+  async_send(ServerRef, Msg, Timeout, undefined).
+
+async_send(ServerRef, Msg, Timeout, Attachment) ->
+  gen_server:call(ServerRef, {async_send, Msg, Timeout, Attachment}, infinity).
 
 get_status(ServerRef) ->
   gen_server:call(ServerRef, get_status).
@@ -85,7 +93,7 @@ init([Endpoint]) ->
     gun_conn_ref = undefined,
     gun_conn_pid = undefined,
     timers = dict:new(),
-    froms = dict:new(),
+    sources = dict:new(),
     delay_queue = orddict:new(),
     listeners = [],
     last_ref = 0,
@@ -97,10 +105,10 @@ handle_call({add_listener, ListenerPid}, _From, State) ->
   {reply, ok, add_listener0(ListenerPid, State)};
 handle_call({delete_listener, ListenerPid}, _From, State) ->
   {reply, ok, delete_listener0(ListenerPid, State)};
-handle_call({send, Msg, Timeout}, From, State) ->
-  {noreply, send0(Msg, Timeout, {From, sync}, State)};
-handle_call({async_send, Msg, Timeout}, From, State) ->
-  {reply, ok, send0(Msg, Timeout, {From, async}, State)};
+handle_call({send, Msg, Timeout, Attachment}, From, State) ->
+  {noreply, send0(Msg, Timeout, {From, Attachment, sync}, State)};
+handle_call({async_send, Msg, Timeout, Attachment}, From, State) ->
+  {reply, ok, send0(Msg, Timeout, {From, Attachment, async}, State)};
 handle_call(get_status, _From, State) ->
   {reply, State#state.status, State};
 handle_call(Request, _From, State) ->
@@ -260,16 +268,16 @@ notify_and_clear(Msg, State) ->
   ),
   State#state{listeners = NewListeners}.
 
-send0(Msg, Timeout, From, State) ->
+send0(Msg, Timeout, Source, State) ->
   case maxwell_protocol:is_req(Msg) of
-    true -> send1(Msg, Timeout, From, State);
+    true -> send1(Msg, Timeout, Source, State);
     false -> throw({unsupported_msg, Msg})
   end.
 
-send1(Msg, Timeout, From, State) ->
+send1(Msg, Timeout, Source, State) ->
   State2 = next_ref(State),
   Ref = State2#state.last_ref,
-  State3 = add_from(Ref, From, State2),
+  State3 = add_source(Ref, Source, State2),
   State4 = add_timer(Ref, Timeout, State3),
   Msg2 = set_ref_to_msg(Msg, Ref),
   send2(Msg2, State4).
@@ -312,11 +320,11 @@ recv2(Msg, State) ->
   lager:debug("Received msg: ~p: from: ~p, ", [Msg, State#state.endpoint]),
   Ref = get_ref_from_msg(Msg),
   reply(Ref, Msg, State),
-  delete_from(Ref, delete_timer(Ref, State)).
+  delete_source(Ref, delete_timer(Ref, State)).
 
 on_round_timeout(Ref, State) ->
   reply(Ref, {error, {100, timeout}, Ref}, State),
-  delete_delay_msg(Ref, delete_from(Ref, delete_timer(Ref, State))).
+  delete_delay_msg(Ref, delete_source(Ref, delete_timer(Ref, State))).
 
 next_ref(State) ->
   NewRef = State#state.last_ref + 1,
@@ -333,11 +341,11 @@ get_ref_from_msg(#do_rep_t{traces = [Trace | _]}) ->
   Trace#trace_t.ref;
 get_ref_from_msg(Msg) -> element(size(Msg), Msg).
 
-add_from(Ref, From, State) ->
-  State#state{froms = dict:store(Ref, From, State#state.froms)}.
+add_source(Ref, Source, State) ->
+  State#state{sources = dict:store(Ref, Source, State#state.sources)}.
 
-delete_from(Ref, State) ->
-  State#state{froms = dict:erase(Ref, State#state.froms)}.
+delete_source(Ref, State) ->
+  State#state{sources = dict:erase(Ref, State#state.sources)}.
 
 add_timer(Ref, Delay, State) ->
   {ok, Timer} = timer:send_after(Delay, self(), ?ON_ROUND_TIMEOUT_CMD(Ref)),
@@ -359,19 +367,26 @@ delete_delay_msg(Ref, State) ->
   State#state{delay_queue = orddict:erase(Ref, State#state.delay_queue)}.
 
 send_delay_msgs(State) -> 
-  State3 = orddict:fold(fun(_, Msg, State2) -> 
-      send3(Msg, State2)
-    end, 
+  State3 = orddict:fold(
+    fun(_, Msg, State2) -> send3(Msg, State2) end, 
     State, State#state.delay_queue
   ),
   State3#state{delay_queue = orddict:new()}.
 
 reply(Ref, Reply, State) ->
-  case dict:find(Ref, State#state.froms) of
-    {ok, {{Pid, _} = From, Mode}} -> 
+  case dict:find(Ref, State#state.sources) of
+    {ok, {{Pid, _} = From, Attachment, Mode}} -> 
       case Mode of 
-        sync -> gen_server:reply(From, Reply);
-        async -> Pid ! Reply
+        sync ->
+          case Attachment of
+            undefined -> gen_server:reply(From, Reply);
+            _ -> gen_server:reply(From, {Reply, Attachment})
+          end;
+        async ->
+          case Attachment of
+            undefined -> Pid ! Reply;
+            _ -> Pid ! {Reply, Attachment}
+          end
       end;
     error -> ignore
   end.
