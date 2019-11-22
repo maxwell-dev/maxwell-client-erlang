@@ -157,12 +157,12 @@ handle_info({gun_error, _GunConnPid, Reason}, State) ->
   {stop, {error, Reason}, State};
 handle_info({gun_ws, _GunConnPid, _StreamRef, close}, State) ->
   lager:info("Gun conn closed: endpoint: ~p", [State#state.endpoint]),
-  {noreply, on_gun_conn_disconnected(State)};
+  {stop, {shutdown, close_0}, on_gun_conn_disconnected(State)};
 handle_info({gun_ws, _GunConnPid, _StreamRef, {close, Code, <<>>}}, State) ->
   lager:info(
     "Gun conn closed: endpoint: ~p, code: ~p", [State#state.endpoint, Code]
   ),
-  {noreply, on_gun_conn_disconnected(State)};
+  {stop, {shutdown, close_1}, on_gun_conn_disconnected(State)};
 handle_info({gun_ws, _GunConnPid, _StreamRef, Frame}, State) ->
   {noreply, recv0(Frame, State)};
 handle_info({gun_down, _GunConnPid, Protocol, Reason,
@@ -171,13 +171,13 @@ handle_info({gun_down, _GunConnPid, Protocol, Reason,
     "Gun conn down: endpoint: ~p, protocol: ~p, reason: ~p",
     [State#state.endpoint, Protocol, Reason]
   ),
-  {noreply, on_gun_conn_disconnected(State)};
+  {stop, {shutdown, close_2}, on_gun_conn_disconnected(State)};
 handle_info({'DOWN', _Ref, process, _GunConnPid, Reason}, State) ->
   lager:info(
     "Gun conn down(2): endpoint: ~p, reason: ~p",
     [State#state.endpoint, Reason]
   ),
-  {noreply, on_gun_conn_disconnected(State)};
+  {stop, {shutdown, close_3}, on_gun_conn_disconnected(State)};
 handle_info(Info, State) ->
   lager:error("Recevied unknown info: ~p", [Info]),
   {noreply, State}.
@@ -231,11 +231,9 @@ on_gun_conn_connected(State) ->
   ).
 
 on_gun_conn_disconnected(State) ->
-  open_gun_conn(
-    close_gun_conn(
-      notify_and_clear(
-        ?ON_DISCONNECTED_CMD(self()), State#state{status = disconnected}
-      )
+  close_gun_conn(
+    notify_and_clear(
+      ?ON_DISCONNECTED_CMD(self()), State#state{status = disconnected}
     )
   ).
 
