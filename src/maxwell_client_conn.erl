@@ -382,7 +382,6 @@ reply(Ref, Reply, State) ->
             _ -> gen_server:reply(From, Callback(Reply))
           end;
         async ->
-          lager:info("reply!!!!!!: ~p", [Reply]),  
           case Callback of
             undefined -> Pid ! Reply;
             _ -> Pid ! Callback(Reply)
