@@ -88,7 +88,7 @@ get_status(ServerRef) ->
 %%%===================================================================
 
 init([Endpoint]) ->
-  State = #state{
+  State = open_gun_conn(#state{
     endpoint = Endpoint,
     gun_conn_ref = undefined,
     gun_conn_pid = undefined,
@@ -98,8 +98,9 @@ init([Endpoint]) ->
     listeners = [],
     last_ref = 0,
     status = undefined
-  },
-  {ok, open_gun_conn(State)}.
+  }),
+  lager:info("Initializing ~p: state: ~p", [?MODULE, State]),
+  {ok, State}.
 
 handle_call({add_listener, ListenerPid}, _From, State) ->
   {reply, ok, add_listener0(ListenerPid, State)};
