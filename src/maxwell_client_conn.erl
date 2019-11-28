@@ -337,6 +337,7 @@ set_ref_to_msg(#do_req_t{traces = [Trace | RestTraces]} = Msg, Ref) ->
 set_ref_to_msg(Msg, Ref) -> setelement(size(Msg), Msg, Ref).
 
 get_ref_from_msg(#do_rep_t{traces = [Trace | _]}) -> Trace#trace_t.ref;
+get_ref_from_msg(#error2_rep_t{traces = [Trace | _]}) -> Trace#trace_t.ref;
 get_ref_from_msg(Msg) -> element(size(Msg), Msg).
 
 add_source(Ref, Source, State) ->
