@@ -99,7 +99,7 @@ init([Endpoint]) ->
     last_ref = 0,
     status = undefined
   }),
-  lager:info("Initializing ~p: state: ~p", [?MODULE, State]),
+  lager:debug("Initializing ~p: state: ~p", [?MODULE, State]),
   {ok, State}.
 
 handle_call({add_listener, ListenerPid}, _From, State) ->
@@ -123,7 +123,7 @@ handle_cast(Request, State) ->
 handle_info(?ON_ROUND_TIMEOUT_CMD(Ref), State) ->
   {noreply, on_round_timeout(Ref, State)};
 handle_info({gun_up, GunConnPid, Protocol}, State) ->
-  lager:info(
+  lager:debug(
     "Gun conn opened: endpoint: ~p, protocol: ~p",
     [State#state.endpoint, Protocol]
   ),
@@ -132,7 +132,7 @@ handle_info({gun_up, GunConnPid, Protocol}, State) ->
 handle_info(
     {gun_upgrade, _GunConnPid, _StreamRef, [<<"websocket">>], Headers}, State
 ) ->
-  lager:info(
+  lager:debug(
     "Gun conn upgraded: endpoint: ~p, headers: ~p",
     [State#state.endpoint, Headers]
   ),
@@ -140,27 +140,27 @@ handle_info(
 handle_info(
     {gun_response, _GunConnPid, _StreamRef, _IsFin, _Status, Headers}, State
 ) ->
-  lager:info(
+  lager:error(
     "Failed to upgrade: endpoint: ~p, headers: ~p",
     [State#state.endpoint, Headers]
   ),
   {stop, {error, ws_upgrade_failed}, State};
 handle_info({gun_error, _GunConnPid, _StreamRef, Reason}, State) ->
-  lager:info(
+  lager:error(
     "Failed to upgrade(2): endpoint: ~p, reason: ~p",
     [State#state.endpoint, Reason]
   ),
   {stop, {error, Reason}, State};
 handle_info({gun_error, _GunConnPid, Reason}, State) ->
-  lager:info(
+  lager:error(
     "Error occured: endpoint: ~p, reason: ~p", [State#state.endpoint, Reason]
   ),
   {stop, {error, Reason}, State};
 handle_info({gun_ws, _GunConnPid, _StreamRef, close}, State) ->
-  lager:info("Gun conn closed: endpoint: ~p", [State#state.endpoint]),
+  lager:debug("Gun conn closed: endpoint: ~p", [State#state.endpoint]),
   {stop, {shutdown, close_0}, on_gun_conn_disconnected(State)};
 handle_info({gun_ws, _GunConnPid, _StreamRef, {close, Code, <<>>}}, State) ->
-  lager:info(
+  lager:debug(
     "Gun conn closed: endpoint: ~p, code: ~p", [State#state.endpoint, Code]
   ),
   {stop, {shutdown, close_1}, on_gun_conn_disconnected(State)};
@@ -168,13 +168,13 @@ handle_info({gun_ws, _GunConnPid, _StreamRef, Frame}, State) ->
   {noreply, recv0(Frame, State)};
 handle_info({gun_down, _GunConnPid, Protocol, Reason,
   _KilledStreams, _UnprocessedStreams}, State) ->
-  lager:info(
+  lager:debug(
     "Gun conn down: endpoint: ~p, protocol: ~p, reason: ~p",
     [State#state.endpoint, Protocol, Reason]
   ),
   {stop, {shutdown, close_2}, on_gun_conn_disconnected(State)};
 handle_info({'DOWN', _Ref, process, _GunConnPid, Reason}, State) ->
-  lager:info(
+  lager:debug(
     "Gun conn down(2): endpoint: ~p, reason: ~p",
     [State#state.endpoint, Reason]
   ),
@@ -184,7 +184,7 @@ handle_info(Info, State) ->
   {noreply, State}.
 
 terminate(Reason, State) ->
-  lager:info("Terminating: reason: ~p, state: ~p", [Reason, State]),
+  lager:debug("Terminating: reason: ~p, state: ~p", [Reason, State]),
   close_gun_conn(State),
   ok.
 
