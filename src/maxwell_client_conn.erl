@@ -292,7 +292,7 @@ send2(Msg, State) ->
         false -> 
           lager:warning("Delay queue is full: ~p", [Size]),
           Ref = get_ref_from_msg(Msg),
-          reply(Ref, {error, {10, delay_queue_is_full}, Ref}, State),
+          reply(Ref, {error, {10, delay_queue_is_full}}, State),
           State
       end
   end.
@@ -322,7 +322,7 @@ recv2(Msg, State) ->
   delete_source(Ref, delete_timer(Ref, State)).
 
 on_round_timeout(Ref, State) ->
-  reply(Ref, {error, {100, timeout}, Ref}, State),
+  reply(Ref, {error, {100, timeout}}, State),
   delete_delay_msg(Ref, delete_source(Ref, delete_timer(Ref, State))).
 
 next_ref(State) ->
@@ -389,6 +389,6 @@ reply(Ref, Reply, State) ->
           end
       end;
     error -> 
-      lager:info("Cannot find source: ref: ~p", [Ref]),  
+      lager:info("Source was removed: reply: ~p, ref: ~p", [Reply, Ref]),
       ignore
   end.

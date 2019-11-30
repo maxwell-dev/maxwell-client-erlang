@@ -61,21 +61,21 @@ init([Config]) ->
 handle_call({fetch, Endpoint}, _From, State) ->
   reply(fetch2(Endpoint, State));
 handle_call(Request, _From, State) ->
-  lager:info("Received unknown call: ~p", [Request]),
+  lager:error("Received unknown call: ~p", [Request]),
   reply({ok, State}).
 
 handle_cast(Request, State) ->
-  lager:info("Received unknown cast: ~p", [Request]),
+  lager:error("Received unknown cast: ~p", [Request]),
   noreply(State).
 
 handle_info({'DOWN', Ref, process, Pid, Reason}, State) ->
-  lager:info(
+  lager:debug(
     "Conn closed: ref: ~p, pid: ~p, reason: ~p",
     [Ref, Pid, Reason]
   ),
   noreply(on_conn_closed({Ref, Pid}, State));
 handle_info(Info, State) ->
-  lager:info("Received unknown info: ~p", [Info]),
+  lager:error("Received unknown info: ~p", [Info]),
   noreply(State).
 
 terminate(Reason, _State) ->
