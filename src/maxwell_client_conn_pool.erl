@@ -162,13 +162,12 @@ on_conn_closed({Ref, _} = Conn, State) ->
 
 erase_conn(Endpoint, {Ref, _} = Conn, State) ->
   State#state{
-    endpoint_conns_dict = 
-        case dict:find(Endpoint, State#state.endpoint_conns_dict) of
+    endpoint_conns_dict =
+    case dict:find(Endpoint, State#state.endpoint_conns_dict) of
       {ok, Conns} ->
-        Conn2 = lists:dropwhile(fun(Conn2) -> Conn2 == Conn end, Conns),
-        dict:store(Endpoint, Conn2, State#state.endpoint_conns_dict);
-      error ->
-        State#state.endpoint_conns_dict
+        Conns2 = lists:filter(fun(Conn2) -> Conn2 =/= Conn end, Conns),
+        dict:store(Endpoint, Conns2, State#state.endpoint_conns_dict);
+      error -> State#state.endpoint_conns_dict
     end,
     ref_endpoint_dict = dict:erase(Ref, State#state.ref_endpoint_dict)
   }.
