@@ -6,7 +6,7 @@
  {<<"lager">>,{pkg,<<"lager">>,<<"3.9.1">>},0},
  {<<"maxwell_protocol">>,
   {git,"https://github.com/maxwell-dev/maxwell-protocol-erlang.git",
-       {ref,"cd564cfd70fd45395105825ef2b6a6fd783c037a"}},
+       {ref,"8433ae15578f88f6588aab48fff01fe35f1c6e51"}},
   0}]}.
 [
 {pkg_hash,[
